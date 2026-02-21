@@ -1,0 +1,1 @@
+Input Sprache am Windows Computer muss dieselbe wie vom installierten Programm sein (English UK nicht kompatibel mit English US)
