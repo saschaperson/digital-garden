@@ -1,91 +1,112 @@
----
-title: Homelab – Infrastructure
-publish: true
-date: 2026-03-15
-tags:
-  - homelab
-  - pi-hole
-  - dns
-  - cloudflare
----
-
 # Homelab – Infrastructure
 
-> CT 101 auf dem Proxmox-Host. Enthält Pi-hole (DNS-basierter Werbeblocker) und Cloudflared (Cloudflare Tunnel). Zurück zum [[Homelab]]-Überblick.
+> CT 101 — Netzwerk-Infrastruktur und Monitoring. Zurück zum [[Homelab]]-Überblick.
 
 ---
 
-## Container-Konfiguration
+## Container
 
 | Eigenschaft | Wert |
-|-------------|------|
+| --- | --- |
 | CT ID | 101 |
 | Hostname | `infrastructure` |
 | IP | 192.168.178.10 |
-| RAM | 512 MB |
-| Disk | 4 GB (ZFS Subvolume) |
-| Cores | (Proxmox Default) |
-| Startup Order | 1 (startet zuerst — DNS muss vor allem anderen laufen) |
+| Cores | 2 |
+| RAM | 1 GB |
+| Swap | 512 MB |
+| Disk | 4 GB (local-zfs) |
+| DNS | 192.168.178.1 (Fritz!Box — kann nicht auf sich selbst zeigen) |
+| Start Order | 1 |
 
-### Compose & Secrets
+Alle anderen Container nutzen .10 (diesen Container) als DNS. CT 101 selbst nutzt die Fritz!Box, weil Pi-hole nicht auf sich selbst als Upstream zeigen kann.
 
-- Compose: `/opt/infrastructure/docker-compose.yml`
-- Env: `/opt/infrastructure/.env` (Berechtigungen: `600`)
-- Enthält: `CLOUDFLARED_TUNNEL_TOKEN`, `PIHOLE_PASSWORD`
+## Services
 
----
+| Service | Port | Funktion |
+| --- | --- | --- |
+| Pi-hole | 80 (Admin) / 53 (DNS) | DNS-basiertes Ad-Blocking für alle Clients |
+| Cloudflared | — (Outbound) | Cloudflare Tunnel für externe Services |
+| Pulse | 7655 | Proxmox Monitoring (CPU, RAM, Disk, Temps aller LXCs) |
+| Portainer | 9443 | Container-Management GUI (gelegentlich genutzt) |
 
-## Pi-hole
+### Pi-hole
 
-Netzwerkweiter DNS-Adblocker. Alle Clients im Heimnetz nutzen Pi-hole als DNS-Server.
+Läuft mit `network_mode: host`. In unprivileged LXCs funktioniert Docker-NAT für Port 53 nicht zuverlässig, deshalb Host-Networking. Die Fritz!Box verweist auf .10 als DNS-Server für alle DHCP-Clients.
 
-### Netzwerk-Konfiguration
+### Cloudflared
 
-Pi-hole läuft mit `network_mode: host`. Das ist notwendig, weil Docker-NAT in einer unprivileged LXC Port 53 nicht korrekt weiterleitet.
+Konfiguriert über das Cloudflare Zero Trust Dashboard, nicht lokal. Der Tunnel-Token liegt in einer `.env`-Datei. Vier Public Hostnames (jellyfin, seerr, betterbahn, home). BetterBahn ist zusätzlich über Cloudflare Access mit E-Mail-OTP geschützt.
 
-Die Fritz!Box ist so konfiguriert:
-- IPv4 lokaler DNS-Server: `192.168.178.10`
-- IPv6: Router Advertisement aktiv, DNSv6 via RA deaktiviert, DHCPv6deaktiviert
-- Ergebnis: Alle Clients nutzen IPv4-DNS über Pi-hole, IPv6-Internet funktioniert normal
+### Pulse
 
-### Web-Interface
+Proxmox-Monitoring über die Proxmox API. Verbunden mit `https://192.168.178.3:8006`, SSL-Verify deaktiviert (self-signed Zertifikat). API Token: `pulse@pam!monitoring` mit PVEAuditor-Rolle. Zeigt alle LXCs mit CPU, RAM, Disk, Netzwerk. Temperature Monitoring aktiviert.
 
-`http://192.168.178.10/admin` (Port 80, nicht 8080). Passwort gesetzt via `docker exec -it pihole pihole -a -p`.
+### Portainer
 
-### Blocklisten
+Portainer CE als zentrale Verwaltung. Portainer Agents laufen auf CT 102, 103 und 104 (Port 9001). Wird gelegentlich genutzt, wenn ohne KI-Support am Stack gearbeitet wird und das GUI praktisch ist.
 
-Automatisch aktualisiert über `pihole-updatelists` (im Image `jacklul/pihole` integriert):
+## Compose-Struktur
 
-| Quelle | URL |
-|--------|-----|
-| Firebog Ticked Lists | `https://v.firebog.net/hosts/lists.php?type=tick` |
-| mmotti Regex | `https://raw.githubusercontent.com/mmotti/pihole-regex/master/regex.list` |
+Zwei separate Compose-Files: `/opt/infrastructure/` (Pi-hole, Cloudflared, Portainer) und `/opt/pulse/` (Pulse).
 
-### DNS-Leak-Prüfung
+### /opt/infrastructure/docker-compose.yml
 
-macOS-Geräte können gelegentlich auf die Fritz!Box als IPv6-DNS zurückfallen. Prüfen mit:
+```yaml
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
+    command: tunnel run
 
-```bash
-# Auf dem Mac:
-scutil --dns | grep "nameserver"
-# Sollte NUR 192.168.178.10 zeigen
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - TZ=Europe/Berlin
+      - WEBPASSWORD=${PIHOLE_PASSWORD}
+      - DNSMASQ_LISTENING=all
+    volumes:
+      - ./pihole/etc-pihole:/etc/pihole
+      - ./pihole/etc-dnsmasq.d:/etc/dnsmasq.d
+    dns:
+      - 127.0.0.1
+      - 1.1.1.1
+
+  portainer:
+    image: portainer/portainer-ce:lts
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9443:9443"
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+volumes:
+  portainer_data:
 ```
 
-Falls IPv6-DNS der Fritz!Box auftaucht: DNS auf dem Mac manuell auf `192.168.178.10` setzen (Systemeinstellungen → Netzwerk → Wi-Fi → Details → DNS).
+### /opt/pulse/docker-compose.yml
 
----
+```yaml
+services:
+  pulse:
+    image: rcourtman/pulse:latest
+    container_name: pulse
+    restart: unless-stopped
+    ports:
+      - "7655:7655"
+    environment:
+      PULSE_AUTH_USER: ${PULSE_USER}
+      PULSE_AUTH_PASS: ${PULSE_PASS}
+    volumes:
+      - ./data:/data
+```
 
-## Cloudflared
-
-Cloudflare Tunnel für sichere externe Erreichbarkeit ohne Port-Forwarding. Exponiert ausschließlich Jellyfin (CT 103, `http://192.168.178.12:8096`). Konfiguration im Cloudflare Zero Trust Dashboard unter Networks → Tunnels.
-
-Actual Budget und alle Admin-Interfaces sind bewusst nicht im Tunnel — Zugriff von unterwegs läuft ausschließlich über Tailscale.
-
----
-
-## Troubleshooting
-
-- **DNS-Auflösung funktioniert nicht:** `nslookup google.com 192.168.178.10` von einem Client testen
-- **Pi-hole Web-UI nicht erreichbar:** `docker ps` in der LXC prüfen, Port 80 muss auf host-Netzwerk lauschen
-- **Cloudflared-Tunnel "unhealthy":** `docker logs cloudflared --tail 20` — häufigste Ursache: Token abgelaufen oder Tunnel im Dashboard deaktiviert
-- **Seite fälschlich geblockt:** Pi-hole → Query Log → Whitelist
+Secrets in `.env`-Dateien im jeweiligen Verzeichnis.

@@ -1,93 +1,85 @@
----
-title: Homelab – Media
-publish: true
-date: 2026-03-15
-tags:
-  - homelab
-  - jellyfin
-  - media-server
----
-
 # Homelab – Media
 
-> CT 103 auf dem Proxmox-Host. Jellyfin als Open-Source-Mediaserver mit Intel iGPU Hardware-Transcoding. Zurück zum [[Homelab]]-Überblick.
+> CT 103 — Jellyfin als Medienserver. Hardware-Transcoding über die Intel UHD 630 iGPU. Zurück zum [[Homelab]]-Überblick.
 
 ---
 
-## Container-Konfiguration
+## Container
 
 | Eigenschaft | Wert |
-|-------------|------|
+| --- | --- |
 | CT ID | 103 |
 | Hostname | `media` |
 | IP | 192.168.178.12 |
-| RAM | 2048 MB |
-| Disk | 20 GB (ZFS Subvolume) |
 | Cores | 2 |
-| Mount | `/mnt/storage` → `/mnt/media` (read-only) |
+| RAM | 2 GB |
+| Swap | 512 MB |
+| Disk | 20 GB (local-zfs) |
+| iGPU | ✅ `dev0: /dev/dri/renderD128,mode=0666` |
+| Bind-Mount | `/mnt/storage` → `/mnt/media` (ro) |
+| Start Order | 3 |
 
-### iGPU-Passthrough
-
-Die Intel UHD 630 (i5-9500T) wird für VA-API Hardware-Transcoding durchgereicht. In der LXC-Config (`/etc/pve/lxc/103.conf`):
-
-```
-lxc.cgroup2.devices.allow: c 226:0 rwm
-lxc.cgroup2.devices.allow: c 226:128 rwm
-lxc.mount.entry: /dev/dri/card0 dev/dri/card0 none bind,optional,create=file
-lxc.mount.entry: /dev/dri/renderD128 dev/dri/renderD128 none bind,optional,create=file
-```
-
-GID-Mapping für die Render-Gruppe (Host-GID 993):
-
-```
-lxc.idmap: u 0 100000 65536
-lxc.idmap: g 0 100000 993
-lxc.idmap: g 993 993 1
-lxc.idmap: g 994 100994 64542
-```
-
-In der Docker Compose: `group_add: ["993"]` und `devices: ["/dev/dri/renderD128:/dev/dri/renderD128", "/dev/dri/card0:/dev/dri/card0"]`.
-
----
+Read-only Bind-Mount, weil Jellyfin nur liest. Schreibzugriff auf Medien läuft über CT 102 (Servarr).
 
 ## Jellyfin
 
-- **Image:** `lscr.io/linuxserver/jellyfin:latest`
-- **Port:** 8096
-- **Medien:** `/mnt/media` (read-only)
-- **Extern:** `https://jellyfin.saschafiedler.com` via Cloudflare Tunnel (CT 101)
+Läuft mit `network_mode: host`, weil die DLNA-Discovery sonst nicht funktioniert und Port-Mapping bei Host-Networking entfällt. Transkodiert über die iGPU (VA-API, Intel UHD 630). Die iGPU wird mit CT 105 (Immich) geteilt.
 
-### Hardware-Transcoding
+Transcoding-Buffer liegt auf `/dev/shm` (RAM-Disk), nicht auf der SSD. Spart SSD-Schreibzyklen und ist schneller.
 
-| Einstellung | Wert |
-|-------------|------|
-| Hardware Acceleration | Video Acceleration API (VA-API) |
-| VA-API Device | `/dev/dri/renderD128` |
-| Driver | Intel iHD (Gen Graphics) |
-| Unterstützte Codecs (Decode) | H.264, HEVC, HEVC 10bit, VP8, VP9, VP9 10bit, VC1 |
-| Unterstützte Codecs (Encode) | H.264, HEVC |
-| AV1 | Nicht unterstützt (erst ab Intel Arc) — Häkchen deaktiviert |
-| Low-Power Encoder | Deaktiviert (kein HuC-Firmware konfiguriert) |
-| Tone Mapping | VPP + Standard, BT.2390 |
-| Throttle Transcodes | Aktiviert, 180s Buffer |
-| Encoding Preset | Fast |
+### Libraries
 
-### Prüfung
+| Library | Pfad im Container | Typ |
+| --- | --- | --- |
+| Movies | `/mnt/media/Movies` | Movies |
+| TV Shows | `/mnt/media/TV Shows` | Shows |
+| YouTube | `/mnt/media/YouTube` | Shows |
 
-```bash
-# VA-API verifizieren:
-docker exec jellyfin /usr/lib/jellyfin-ffmpeg/vainfo
-# Sollte Intel iHD Driver und Profile auflisten
+Die YouTube-Library nutzt den Typ "Shows". Keine aggressiven Remote-Metadata-Provider (TVDB/TMDb) für diese Library, da die lokale Ordnerstruktur wichtiger ist als Metadaten-Matches.
 
-# Während eines Transcodes:
-# Jellyfin Dashboard zeigt "(HW)" neben aktiven Streams
+## Compose
+
+```yaml
+# /opt/media/docker-compose.yml
+services:
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Berlin
+    volumes:
+      - ./jellyfin/config:/config
+      - /mnt/media:/media:ro
+      - /dev/shm:/transcode
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+    restart: unless-stopped
+
+  portainer-agent:
+    image: portainer/agent:lts
+    container_name: portainer-agent
+    restart: unless-stopped
+    ports:
+      - "9001:9001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
 ```
 
----
+`card0` wird nicht durchgereicht — Jellyfin braucht nur `renderD128` für VA-API Transcoding.
 
-## Troubleshooting
+## Externer Zugriff
 
-- **Kein Hardware-Transcoding:** Prüfe ob `/dev/dri/renderD128` in der LXC sichtbar ist (`ls -la /dev/dri/`), ob `group_add: ["993"]` in der Compose steht, und ob VA-API in Jellyfin aktiviert ist
-- **Medien fehlen nach Storage-Umbau:** Jellyfin Dashboard → Libraries → Scan All Libraries
-- **Buffering bei Remote-Wiedergabe:** Cloudflare Tunnel hat kein Bandbreiten-Limit, aber Transcoding-Qualität in Jellyfin-Client reduzieren falls Upload nicht reicht (250 Mbit/s)
-- **Transcode-Cache voll:** Standard-Pfad ist `/config/transcodes` auf dem LXC-Rootfs. Bei Bedarf auf tmpfs oder separates Volume umziehen
+Über Cloudflare Tunnel als `jellyfin.saschafiedler.com`. Kein Cloudflare Access davor, weil Infuse und Swiftfin (iOS/tvOS Jellyfin-Clients) keinen Browser-Login-Flow können. Schutz über Jellyfins eigene Benutzerverwaltung (starke Passwörter, kein Remote-Admin-Zugriff).
+
+## Transcoding prüfen
+
+```bash
+# Im LXC:
+apt install -y intel-gpu-tools
+intel_gpu_top
+# Wenn jemand transkodiert, sollten die Render/Video-Balken aktiv sein
+```
