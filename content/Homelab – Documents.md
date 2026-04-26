@@ -114,6 +114,8 @@ services:
       - /mnt/documents:/usr/src/paperless/media
       - ./export:/usr/src/paperless/export
       - ./consume:/usr/src/paperless/consume
+    env_file:
+      - .env
     environment:
       PAPERLESS_REDIS: redis://broker:6379
       PAPERLESS_TIKA_ENABLED: 1
@@ -143,3 +145,5 @@ services:
 volumes:
   redisdata:
 ```
+
+`.env` liegt unter `/opt/paperless/.env` und enthält `PAPERLESS_SECRET_KEY`.
