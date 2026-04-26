@@ -50,6 +50,8 @@ Der Subnet Router macht alle lokalen IPs (192.168.178.x) von überall erreichbar
 
 **Key Expiry deaktiviert:** Für Server-Geräte nötig — sonst alle 180 Tage manuelle Reauthentifizierung.
 
+Der Pi 4 (Home Assistant) hat keinen eigenen Tailscale-Agent. HA ist über den Proxmox Subnet-Router erreichbar — kein separater Agent nötig.
+
 ### Tailscale Serve
 
 Actual Budget benötigt HTTPS wegen SharedArrayBuffer. Da kein öffentlicher Tunnel sinnvoll ist, löst Tailscale Serve das Problem: der Proxmox-Host stellt den Service unter einer Tailscale-HTTPS-URL mit gültigem Zertifikat bereit. Die Serve-Konfiguration überlebt Reboots automatisch.
