@@ -1,7 +1,7 @@
 ---
 title: Digital Garden – Setup & Wartung
 publish: false
-date: 2026-02-20
+date: 2026-04-26
 tags:
   - meta
   - digital-garden
@@ -118,6 +118,70 @@ Datei: `.github/workflows/deploy.yml`. Push auf `main` → GitHub Actions → `n
 
 ---
 
+## Zettel-Übersicht
+
+### Öffentlich (`publish: true`)
+
+| Zettel | Thema |
+|--------|-------|
+| [[Digital Garden]] | Meta: Was ist das hier, Tech Stack |
+| [[Mein Homelab]] | Persönlicher Hintergrund, Hardware, Rack |
+| [[Homelab]] | Master: Architektur, alle Services, KI-Briefing, transklundiert alle Unter-Seiten |
+| [[Homelab – Netzwerk & Zugang]] | Fritz!Box, Tailscale, Cloudflare Zero Trust |
+| [[Homelab – Infrastructure]] | CT 101: Pi-hole, Cloudflared, Pulse, Portainer |
+| [[Homelab – Media]] | CT 103: Jellyfin, Hardware-Transcoding |
+| [[Homelab – Services]] | CT 104: Actual, Homarr, BetterBahn, Homebox |
+| [[Homelab – Photos]] | CT 105: Immich, OpenVINO ML |
+| [[Homelab – Documents]] | CT 106: Paperless-ngx |
+| [[Homelab – Storage & Backup]] | MergerFS, Backup-Strategie, Drive Health |
+| [[Homelab – Commands]] | Runbook: Updates, Start/Stop, Health, Notfall |
+| [[Home Assistant]] | Pi 4: HA OS, Zigbee, Automationen, iPad Dashboard |
+| [[Nextcloud]] | CalDAV/CardDAV auf Uberspace, HA-Integration |
+
+### Privat (`publish: false` — nie auf GitHub)
+
+| Zettel | Inhalt |
+|--------|--------|
+| [[Digital Garden – Setup & Wartung]] | Dieser Zettel |
+| [[Homelab – Privat]] | Alle Identifier: IPs, Ports, Subdomains, Tailnet, UUIDs, Tokens, SMART-Baseline, Shopping List |
+| [[Homelab – Servarr]] | CT 102: Arr-Stack, SABnzbd, Seerr, Pinchflat |
+| [[Eltern-Homelab]] | Mac mini Setup für Eltern, separates Projekt |
+
+---
+
+## Alte Dateien die gelöscht wurden
+
+Diese Dateien existieren nicht mehr und müssen aus dem Vault **und** aus Git entfernt werden:
+
+| Alte Datei | Ersetzt durch |
+|------------|---------------|
+| `Homeserver.md` | `Homelab.md` |
+| `AdBlock – Pi-hole & iSponsorBlockTV.md` | Abschnitt in `Homelab – Infrastructure.md` |
+| `Vaultwarden.md` | — (nicht mehr im aktiven Stack) |
+| `Cloudflare Tunnel & Portainer.md` | `Homelab – Netzwerk & Zugang.md` |
+| `Docker Compose – Homeserver.md` | Aufgeteilt in einzelne LXC-Zettel |
+| `Nextcloud – CalDAV & CardDAV.md` | `Nextcloud.md` |
+| `Docker .env – Homeserver.md` | `Homelab – Privat.md` |
+| `Nextcloud – Intern.md` | `Homelab – Privat.md` |
+| `Home Assistant – Intern.md` | `Homelab – Privat.md` |
+| `Cloudflare & Tailscale – Intern.md` | `Homelab – Privat.md` |
+| `Pi Hole.md` | Abschnitt in `Homelab – Infrastructure.md` |
+
+```bash
+# Alte Dateien aus Git entfernen (im Repo-Root ausführen):
+cd ~/Documents/Obsidian/Personal
+git rm "content/Homeserver.md"
+git rm "content/AdBlock – Pi-hole & iSponsorBlockTV.md"
+git rm "content/Vaultwarden.md"
+git rm "content/Cloudflare Tunnel & Portainer.md"
+git rm "content/Docker Compose – Homeserver.md"
+git rm "content/Nextcloud – CalDAV & CardDAV.md"
+git rm "content/Pi Hole.md"
+# Private Dateien nur lokal löschen — waren nie auf GitHub
+```
+
+---
+
 ## Neue Note veröffentlichen
 
 1. Neue Note in Obsidian anlegen (Vault: `Personal/content`)
@@ -133,7 +197,8 @@ Datei: `.github/workflows/deploy.yml`. Push auf `main` → GitHub Actions → `n
 4. Commit & Push:
    ```bash
    cd ~/Documents/Obsidian/Personal
-   git add content/deine-datei.md
+   git add .
+   git status                  # Prüfen was sich ändert
    git commit -m "Add note: Thema XY"
    git push
    ```
@@ -156,36 +221,6 @@ npm ci
 # Obsidian: Vault /Personal/content öffnen
 # Test: npx quartz build --serve
 ```
-
----
-
-## Zettel-Übersicht
-
-### Öffentlich (`publish: true`)
-
-| Zettel | Thema |
-|--------|-------|
-| [[Digital Garden]] | Meta: Was ist das hier, Tech Stack |
-| [[Homeserver]] | Hub: Hardware, Architektur, alle Service-Links, KI-Briefing |
-| [[Home Assistant]] | Smart Home, ESP32, Dashboard, Automationen |
-| [[AdBlock – Pi-hole & iSponsorBlockTV]] | DNS-Blocker + YouTube Sponsorblock |
-| [[Vaultwarden]] | Passwortmanager |
-| [[Nextcloud – CalDAV & CardDAV]] | Kontakte & Kalender |
-| [[Cloudflare Tunnel & Portainer]] | Infrastruktur |
-| [[Docker Compose – Homeserver]] | Compose + .env-Vorlage |
-| [[Actual Budget]] | Budgeting |
-| [[BamBuddy]] | 3D-Druck-Monitoring |
-
-### Privat (`publish: false`)
-
-| Zettel | Inhalt |
-|--------|--------|
-| [[Digital Garden – Setup & Wartung]] | Dieser Zettel – Quartz-Config, Deploy, Workflow |
-| [[Docker .env – Homeserver]] | Echte Umgebungsvariablen |
-| [[Servarr]] | Jellyfin + Arr-Stack |
-| [[Nextcloud – Intern]] | Uberspace-Zugangsdaten, DNS, PHP-Config |
-| [[Home Assistant – Intern]] | Secrets, MACs, Netzwerk-IPs |
-| [[Cloudflare & Tailscale – Intern]] | Tunnel-ID, Tailnet, DNS-Records |
 
 ---
 
