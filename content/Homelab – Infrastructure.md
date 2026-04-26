@@ -1,3 +1,13 @@
+---
+title: Homelab – Infrastructure
+publish: true
+date: 2026-04-26
+tags:
+  - homelab
+  - infrastructure
+  - docker
+---
+
 # Homelab – Infrastructure
 
 > CT 101 — Netzwerk-Infrastruktur und Monitoring. Zurück zum [[Homelab]]-Überblick.
@@ -7,51 +17,78 @@
 ## Container
 
 | Eigenschaft | Wert |
-| --- | --- |
+|-------------|------|
 | CT ID | 101 |
 | Hostname | `infrastructure` |
-| IP | 192.168.178.10 |
 | Cores | 2 |
 | RAM | 1 GB |
 | Swap | 512 MB |
 | Disk | 4 GB (local-zfs) |
-| DNS | 192.168.178.1 (Fritz!Box — kann nicht auf sich selbst zeigen) |
 | Start Order | 1 |
 
-Alle anderen Container nutzen .10 (diesen Container) als DNS. CT 101 selbst nutzt die Fritz!Box, weil Pi-hole nicht auf sich selbst als Upstream zeigen kann.
+CT 101 nutzt die Fritz!Box als DNS — Pi-hole kann nicht auf sich selbst als Upstream zeigen. Alle anderen Container nutzen CT 101 als DNS.
+
+---
 
 ## Services
 
 | Service | Port | Funktion |
-| --- | --- | --- |
-| Pi-hole | 80 (Admin) / 53 (DNS) | DNS-basiertes Ad-Blocking für alle Clients |
-| Cloudflared | — (Outbound) | Cloudflare Tunnel für externe Services |
-| Pulse | 7655 | Proxmox Monitoring (CPU, RAM, Disk, Temps aller LXCs) |
-| Portainer | 9443 | Container-Management GUI (gelegentlich genutzt) |
+|---------|------|----------|
+| Pi-hole | 80 (Admin) / 53 (DNS) | DNS-basiertes Ad-Blocking |
+| Cloudflared | — (Outbound) | Cloudflare Tunnel |
+| Pulse | 7655 | Proxmox-Monitoring |
+| Portainer | 9443 | Container-Management GUI |
 
-### Pi-hole
+---
 
-Läuft mit `network_mode: host`. In unprivileged LXCs funktioniert Docker-NAT für Port 53 nicht zuverlässig, deshalb Host-Networking. Die Fritz!Box verweist auf .10 als DNS-Server für alle DHCP-Clients.
+## Pi-hole
 
-### Cloudflared
+Läuft mit `network_mode: host`. In unprivileged LXCs funktioniert Docker-NAT für Port 53 nicht zuverlässig.
 
-Konfiguriert über das Cloudflare Zero Trust Dashboard, nicht lokal. Der Tunnel-Token liegt in einer `.env`-Datei. Vier Public Hostnames (jellyfin, seerr, betterbahn, home). BetterBahn ist zusätzlich über Cloudflare Access mit E-Mail-OTP geschützt.
+### Einrichtung
 
-### Pulse
+Pi-hole-Updatelists für automatische Pflege der Adlists installieren:
+- Repo: [github.com/jacklul/pihole-updatelists](https://github.com/jacklul/pihole-updatelists)
+- Empfohlene Adlists: [v.firebog.net/hosts/lists.php?type=tick](https://v.firebog.net/hosts/lists.php?type=tick)
+- Whitelist: [github.com/anudeepND/whitelist](https://raw.githubusercontent.com/anudeepND/whitelist/master/domains/whitelist.txt)
+- Regex Blacklist: [github.com/mmotti/pihole-regex](https://raw.githubusercontent.com/mmotti/pihole-regex/master/regex.list)
 
-Proxmox-Monitoring über die Proxmox API. Verbunden mit `https://192.168.178.3:8006`, SSL-Verify deaktiviert (self-signed Zertifikat). API Token: `pulse@pam!monitoring` mit PVEAuditor-Rolle. Zeigt alle LXCs mit CPU, RAM, Disk, Netzwerk. Temperature Monitoring aktiviert.
+Wenn alles korrekt eingerichtet ist, zeigt das GUI unter Adlists „Managed by pihole-updatelists".
 
-### Portainer
+**Upstream DNS:** Unbound als rekursiver Resolver empfohlen — [docs.pi-hole.net/guides/dns/unbound](https://docs.pi-hole.net/guides/dns/unbound/).
 
-Portainer CE als zentrale Verwaltung. Portainer Agents laufen auf CT 102, 103 und 104 (Port 9001). Wird gelegentlich genutzt, wenn ohne KI-Support am Stack gearbeitet wird und das GUI praktisch ist.
+### Fritz!Box-Einbindung
 
-## Compose-Struktur
+Pi-hole als DNS unter Heimnetz → Netzwerk → IPv4-Einstellungen → Lokaler DNS-Server eintragen. Die Fritz!Box verteilt diese Adresse per DHCP an alle Clients.
+
+**Bekannte Einschränkung Fritz!Box 6591 Cable:** Nur ein DNS-Eintrag möglich, kein expliziter Fallback.
+
+---
+
+## Cloudflared
+
+Konfiguriert ausschließlich über das Cloudflare Zero Trust Dashboard, nicht lokal. Der Tunnel-Token liegt in einer `.env`-Datei. Details zur Tunnel-Konfiguration in [[Homelab – Netzwerk & Zugang]].
+
+---
+
+## Pulse
+
+Proxmox-Monitoring über die Proxmox API. SSL-Verify deaktiviert (self-signed Zertifikat). API-Token mit PVEAuditor-Rolle — Monitoring-only, kein Schreibzugriff. Zeigt alle LXCs mit CPU, RAM, Disk, Netzwerk, Temperatur.
+
+---
+
+## Portainer
+
+Portainer CE als Container-Management GUI. Portainer Agents laufen zusätzlich auf CT 102, 103 und 104. Wird gelegentlich genutzt wenn das GUI praktischer ist als SSH.
+
+---
+
+## Compose
 
 Zwei separate Compose-Files: `/opt/infrastructure/` (Pi-hole, Cloudflared, Portainer) und `/opt/pulse/` (Pulse).
 
-### /opt/infrastructure/docker-compose.yml
-
 ```yaml
+# /opt/infrastructure/docker-compose.yml
 services:
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -92,9 +129,8 @@ volumes:
   portainer_data:
 ```
 
-### /opt/pulse/docker-compose.yml
-
 ```yaml
+# /opt/pulse/docker-compose.yml
 services:
   pulse:
     image: rcourtman/pulse:latest

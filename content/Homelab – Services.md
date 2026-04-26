@@ -1,16 +1,25 @@
+---
+title: Homelab – Services
+publish: true
+date: 2026-04-26
+tags:
+  - homelab
+  - services
+  - docker
+---
+
 # Homelab – Services
 
-> CT 104 — Der Sammel-Container für leichtgewichtige Services. Zurück zum [[Homelab]]-Überblick.
+> CT 104 — Leichtgewichtige Services ohne eigene Isolation. Zurück zum [[Homelab]]-Überblick.
 
 ---
 
 ## Container
 
 | Eigenschaft | Wert |
-| --- | --- |
+|-------------|------|
 | CT ID | 104 |
 | Hostname | `services` |
-| IP | 192.168.178.13 |
 | Cores | 2 |
 | RAM | 2 GB |
 | Swap | 512 MB |
@@ -18,40 +27,55 @@
 | Bind-Mount | `/mnt/storage` → `/mnt/media` (ro) |
 | Start Order | 4 |
 
-Hier landen Tools, die keine eigene Isolation brauchen und wenig Ressourcen verbrauchen. Jeder Service hat ein eigenes Compose-File unter `/opt/<service>/`. Ausnahme: Actual, iSponsorBlockTV, Bambuddy und der Portainer Agent teilen sich `/opt/services/docker-compose.yml` (historisch gewachsen, funktioniert, wird nicht refactored).
+Services die keine eigene Isolation brauchen und wenig Ressourcen verbrauchen. Jeder Service hat ein eigenes Compose-File unter `/opt/<service>/`. Ausnahme: Actual, iSponsorBlockTV, Bambuddy und Portainer Agent teilen sich `/opt/services/docker-compose.yml` (historisch gewachsen, wird nicht refactored).
+
+---
 
 ## Services
 
-| Service | Port | Compose-Pfad | Funktion |
-| --- | --- | --- | --- |
-| Actual Budget | 5006 | `/opt/services/` | Budgetverwaltung. Braucht HTTPS für SharedArrayBuffer → Tailscale Serve |
-| iSponsorBlockTV | host network | `/opt/services/` | SponsorBlock für Apple TV |
-| Bambuddy | 8000 | `/opt/services/` | Bambu Lab A1 Drucker-Monitoring über MQTT |
-| Speedtest Tracker | 8765 | `/opt/speedtest-tracker/` | WAN-Speedtests alle 2 Stunden mit Historie und Grafiken |
-| Homarr | 7575 | `/opt/homarr/` | Dashboard. Admin-Board und Freunde-Board |
-| BetterBahn | 3000 | `/opt/betterbahn/` | DB Split-Ticketing |
-| Homebox | 3100 | `/opt/homebox/` | Haushaltsinventar mit QR-Codes |
-| Portainer Agent | 9001 | `/opt/services/` | Remote-Management für Portainer auf CT 101 |
+| Service | Port | Funktion |
+|---------|------|----------|
+| Actual Budget | 5006 | Budgetverwaltung |
+| iSponsorBlockTV | host network | SponsorBlock für Apple TV |
+| Bambuddy | 8000 | Bambu Lab A1 Drucker-Monitoring |
+| Speedtest Tracker | 8765 | WAN-Speedtests alle 2 Stunden |
+| Homarr | 7575 | Dashboard (Admin-Board + Freunde-Board) |
+| BetterBahn | 3000 | DB Split-Ticketing |
+| Homebox | 3100 | Haushaltsinventar mit QR-Codes |
+| Portainer Agent | 9001 | Remote-Management für Portainer auf CT 101 |
 
-### Actual Budget
+---
 
-Braucht SharedArrayBuffer, das nur über HTTPS funktioniert. Gelöst über `tailscale serve --bg --https=5006 http://192.168.178.13:5006` auf dem Proxmox-Host. Zugriff über `https://proxmox.tail4a9632.ts.net:5006`. Die Serve-Config überlebt Reboots automatisch.
+## Actual Budget
 
-### Homarr
+Benötigt SharedArrayBuffer, das nur über HTTPS funktioniert. Gelöst über Tailscale Serve auf dem Proxmox-Host — stellt den Service unter einer Tailscale-HTTPS-URL mit gültigem Zertifikat bereit. Nicht über Cloudflare Tunnel exponiert.
 
-Dashboard mit Multi-User-Boards: ein Admin-Board mit allen Services und ein Freunde-Board mit Jellyfin, Seerr, BetterBahn. Proxmox-Integration über API Token (`homarr@pam!monitoring`, PVEAuditor-Rolle, Proxmox CA-Zertifikat hochgeladen).
+```bash
+tailscale serve --bg --https=5006 http://<ct-ip>:5006
+```
 
-Extern unter `home.saschafiedler.com` (Cloudflare Tunnel, kein Access davor — Homarr hat eigenen Login).
+Die Serve-Konfiguration überlebt Reboots automatisch.
 
-### BetterBahn
+---
 
-Extern unter `betterbahn.saschafiedler.com`, geschützt mit Cloudflare Access (E-Mail-OTP). Ohne Access wäre es offen, weil BetterBahn keinen eigenen Login hat. Risiko ohne Schutz: Bots könnten die DB-API überlasten und den Zugang für eigene Nutzung blockieren.
+## Homarr
+
+Multi-User-Boards: Admin-Board mit allen Services, Freunde-Board mit Jellyfin, Seerr, BetterBahn. Proxmox-Integration über dedizierter API-Token mit PVEAuditor-Rolle.
+
+Extern über Cloudflare Tunnel, eigener Login (kein Cloudflare Access davor).
+
+---
+
+## BetterBahn
+
+Kein eigener Login. Deshalb Cloudflare Access mit E-Mail-OTP davor — sonst wäre der Endpunkt offen für Bot-Traffic der die DB-API überlasten kann.
+
+---
 
 ## Compose-Files
 
-### /opt/services/docker-compose.yml
-
 ```yaml
+# /opt/services/docker-compose.yml
 services:
   actual:
     image: actualbudget/actual-server:latest
@@ -96,9 +120,8 @@ services:
       - /var/lib/docker/volumes:/var/lib/docker/volumes
 ```
 
-### /opt/speedtest-tracker/docker-compose.yml
-
 ```yaml
+# /opt/speedtest-tracker/docker-compose.yml
 services:
   speedtest-tracker:
     image: lscr.io/linuxserver/speedtest-tracker:latest
@@ -118,9 +141,8 @@ services:
       - ./config:/config
 ```
 
-### /opt/homarr/docker-compose.yml
-
 ```yaml
+# /opt/homarr/docker-compose.yml
 services:
   homarr:
     image: ghcr.io/homarr-labs/homarr:latest
@@ -135,9 +157,8 @@ services:
       - ./appdata:/appdata
 ```
 
-### /opt/betterbahn/docker-compose.yml
-
 ```yaml
+# /opt/betterbahn/docker-compose.yml
 services:
   betterbahn:
     image: ghcr.io/betterbahn/betterbahn:latest
@@ -151,9 +172,8 @@ services:
       - "3000:3000"
 ```
 
-### /opt/homebox/docker-compose.yml
-
 ```yaml
+# /opt/homebox/docker-compose.yml
 services:
   homebox:
     image: ghcr.io/sysadminsmedia/homebox:latest
@@ -171,4 +191,4 @@ services:
       - ./data:/data
 ```
 
-Secrets (Speedtest APP_KEY, Homarr SECRET_ENCRYPTION_KEY) liegen in `.env`-Dateien im jeweiligen Verzeichnis.
+Secrets in `.env`-Dateien im jeweiligen Verzeichnis.

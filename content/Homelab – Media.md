@@ -1,3 +1,13 @@
+---
+title: Homelab – Media
+publish: true
+date: 2026-04-26
+tags:
+  - homelab
+  - jellyfin
+  - media
+---
+
 # Homelab – Media
 
 > CT 103 — Jellyfin als Medienserver. Hardware-Transcoding über die Intel UHD 630 iGPU. Zurück zum [[Homelab]]-Überblick.
@@ -7,10 +17,9 @@
 ## Container
 
 | Eigenschaft | Wert |
-| --- | --- |
+|-------------|------|
 | CT ID | 103 |
 | Hostname | `media` |
-| IP | 192.168.178.12 |
 | Cores | 2 |
 | RAM | 2 GB |
 | Swap | 512 MB |
@@ -19,23 +28,29 @@
 | Bind-Mount | `/mnt/storage` → `/mnt/media` (ro) |
 | Start Order | 3 |
 
-Read-only Bind-Mount, weil Jellyfin nur liest. Schreibzugriff auf Medien läuft über CT 102 (Servarr).
+Read-only Bind-Mount — Jellyfin liest nur. Schreibzugriff auf Medien läuft über CT 102 (Servarr).
+
+---
 
 ## Jellyfin
 
-Läuft mit `network_mode: host`, weil die DLNA-Discovery sonst nicht funktioniert und Port-Mapping bei Host-Networking entfällt. Transkodiert über die iGPU (VA-API, Intel UHD 630). Die iGPU wird mit CT 105 (Immich) geteilt.
+Läuft mit `network_mode: host` wegen DLNA-Discovery. Transkodiert über die iGPU via VA-API. Die iGPU wird mit CT 105 (Immich) geteilt.
 
-Transcoding-Buffer liegt auf `/dev/shm` (RAM-Disk), nicht auf der SSD. Spart SSD-Schreibzyklen und ist schneller.
+Transcoding-Buffer auf `/dev/shm` (RAM-Disk) statt SSD — spart Schreibzyklen und ist schneller.
+
+**Externer Zugang:** Cloudflare Tunnel. Kein Cloudflare Access davor — Infuse und Swiftfin (iOS/tvOS-Clients) können keinen Browser-Login-Flow. Schutz über Jellyfins eigene Benutzerverwaltung.
 
 ### Libraries
 
 | Library | Pfad im Container | Typ |
-| --- | --- | --- |
+|---------|-------------------|-----|
 | Movies | `/mnt/media/Movies` | Movies |
 | TV Shows | `/mnt/media/TV Shows` | Shows |
 | YouTube | `/mnt/media/YouTube` | Shows |
 
-Die YouTube-Library nutzt den Typ "Shows". Keine aggressiven Remote-Metadata-Provider (TVDB/TMDb) für diese Library, da die lokale Ordnerstruktur wichtiger ist als Metadaten-Matches.
+Die YouTube-Library nutzt den Typ „Shows". Keine aggressiven Remote-Metadata-Provider für diese Library — lokale Ordnerstruktur hat Vorrang.
+
+---
 
 ## Compose
 
@@ -71,15 +86,12 @@ services:
 
 `card0` wird nicht durchgereicht — Jellyfin braucht nur `renderD128` für VA-API Transcoding.
 
-## Externer Zugriff
-
-Über Cloudflare Tunnel als `jellyfin.saschafiedler.com`. Kein Cloudflare Access davor, weil Infuse und Swiftfin (iOS/tvOS Jellyfin-Clients) keinen Browser-Login-Flow können. Schutz über Jellyfins eigene Benutzerverwaltung (starke Passwörter, kein Remote-Admin-Zugriff).
+---
 
 ## Transcoding prüfen
 
 ```bash
-# Im LXC:
 apt install -y intel-gpu-tools
 intel_gpu_top
-# Wenn jemand transkodiert, sollten die Render/Video-Balken aktiv sein
+# Render/Video-Balken sollten bei aktivem Transcoding ausschlagen
 ```

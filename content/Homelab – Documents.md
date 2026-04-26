@@ -1,3 +1,13 @@
+---
+title: Homelab – Documents
+publish: true
+date: 2026-04-26
+tags:
+  - homelab
+  - paperless
+  - documents
+---
+
 # Homelab – Documents
 
 > CT 106 — Paperless-ngx als digitales Dokumentenarchiv. OCR in Deutsch und Englisch. Zurück zum [[Homelab]]-Überblick.
@@ -7,10 +17,9 @@
 ## Container
 
 | Eigenschaft | Wert |
-| --- | --- |
+|-------------|------|
 | CT ID | 106 |
 | Hostname | `documents` |
-| IP | 192.168.178.15 |
 | Cores | 2 |
 | RAM | 2 GB |
 | Swap | 512 MB |
@@ -18,10 +27,12 @@
 | Bind-Mount | `/mnt/storage/Documents` → `/mnt/documents` (rw) |
 | Start Order | 6 |
 
+---
+
 ## Services
 
 | Service | Funktion |
-| --- | --- |
+|---------|----------|
 | Paperless-ngx | Web-UI, Dokumentenverarbeitung, OCR |
 | Redis | Task Queue für Celery Worker |
 | Gotenberg | Office-Dokument-Konvertierung (Word, Excel, PowerPoint) |
@@ -29,11 +40,15 @@
 
 ### Design-Entscheidungen
 
-**SQLite statt PostgreSQL:** Spart einen Container und ~500 MB RAM. Für einen Einzelbenutzer mit ein paar hundert Dokumenten pro Jahr ausreichend. Migration auf PostgreSQL jederzeit möglich.
+**SQLite statt PostgreSQL:** Spart einen Container und RAM. Für einen Einzelbenutzer mit wenigen hundert Dokumenten pro Jahr ausreichend. Migration auf PostgreSQL jederzeit möglich.
 
-**Tika + Gotenberg:** Ohne die beiden kann Paperless nur PDFs und Bilder verarbeiten. Mit ihnen kommen Word, Excel, PowerPoint, E-Mails und weitere Formate dazu. Braucht etwas mehr RAM, lohnt sich aber.
+**Tika + Gotenberg:** Ohne diese beiden verarbeitet Paperless nur PDFs und Bilder. Mit ihnen kommen Word, Excel, PowerPoint, E-Mails und weitere Formate dazu.
 
-**OCR-Sprachen:** `deu+eng` — Deutsch und Englisch.
+**OCR-Sprachen:** `deu+eng`.
+
+**`PAPERLESS_WEBSERVER_WORKERS: 1`** spart RAM. Für einen Einzelbenutzer reicht ein Worker.
+
+---
 
 ## Storage
 
@@ -41,7 +56,7 @@
 CT 106 Root-Disk (12 GB, ZFS SSD)
 ├── /opt/paperless/           Compose-File
 ├── /opt/paperless/data/      SQLite DB, Search Index, Classifier
-├── /opt/paperless/consume/   Hier Dokumente reinwerfen → auto-Processing
+├── /opt/paperless/consume/   Hier Dokumente ablegen → auto-Processing
 └── /opt/paperless/export/    Für manuelle Exports/Backups
 
 /mnt/documents (Bind-Mount → /mnt/storage/Documents)
@@ -50,7 +65,27 @@ CT 106 Root-Disk (12 GB, ZFS SSD)
     └── archive/              OCR-verarbeitete PDFs
 ```
 
-**Berechtigungen:** `chown -R 101000:101000 /mnt/storage/Documents` auf dem Host. Paperless läuft als User 1000 im Container (UID 1000 = Host-UID 101000).
+**Berechtigungen:** Paperless läuft als User 1000 im Container (= Host-UID 101000). Bind-Mount-Ordner auf dem Host entsprechend `chown`.
+
+---
+
+## Dokumente einbringen
+
+Drei Wege:
+
+1. **Consume-Ordner:** Datei nach `/opt/paperless/consume/` → automatische Verarbeitung (Polling alle 30 Sekunden)
+2. **Web-Upload:** Drag & Drop in der Web-UI
+3. **E-Mail-Import:** IMAP-Postfach unter Settings → Mail konfigurieren
+
+Kein dedizierter Scanner nötig — die iOS-Dateien-App hat einen eingebauten Dokumentenscanner.
+
+---
+
+## Externer Zugang
+
+Nur LAN und Tailscale. Kein Cloudflare Tunnel — Einzelbenutzer-Service.
+
+---
 
 ## Compose
 
@@ -108,19 +143,3 @@ services:
 volumes:
   redisdata:
 ```
-
-`PAPERLESS_WEBSERVER_WORKERS: 1` spart RAM. Für einen Einzelbenutzer reicht ein Worker.
-
-## Dokumente einbringen
-
-Drei Wege:
-
-1. **Consume-Ordner:** Datei nach `/opt/paperless/consume/` kopieren → automatische Verarbeitung (Polling alle 30 Sekunden).
-2. **Web-Upload:** Über die Web-UI → Drag & Drop.
-3. **E-Mail-Import:** Unter Settings → Mail ein IMAP-Postfach konfigurieren. Rechnungen an eine dedizierte Adresse weiterleiten.
-
-Kein dedizierter Scanner nötig. Die iOS Dateien-App hat einen eingebauten Dokumentenscanner. PDF per Share-Sheet oder in den Consume-Ordner.
-
-## Externer Zugriff
-
-Nur LAN und Tailscale. Kein Cloudflare Tunnel — Paperless ist ein Einzelbenutzer-Service.

@@ -1,0 +1,1 @@
+https://www.arket.com/en-ww/
