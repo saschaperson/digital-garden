@@ -55,31 +55,35 @@ After=mnt-storage.mount
 
 ```
 /mnt/storage/
-├── Movies/              Radarr (CT 102, rw)
-├── TV Shows/            Sonarr (CT 102, rw)
-├── YouTube/             Pinchflat (CT 102, rw)
-├── Downloads/
-│   ├── Complete/        SABnzbd (CT 102, rw)
-│   └── Incomplete/      SABnzbd (CT 102, rw)
-├── Photos/              Immich (CT 105, rw)
-├── Documents/           Paperless-ngx (CT 106, rw)
-└── Backups/
+├── usenet/
+│   ├── incomplete/      SABnzbd (CT 102, rw)
+│   └── complete/
+│       ├── movies/      SABnzbd → Radarr
+│       └── tv/          SABnzbd → Sonarr
+├── media/
+│   ├── movies/          Radarr (CT 102, rw) | Jellyfin (CT 103, ro)
+│   ├── tv/              Sonarr (CT 102, rw) | Jellyfin (CT 103, ro)
+│   └── youtube/         Pinchflat (CT 102, rw) | Jellyfin (CT 103, ro)
+├── photos/              Immich (CT 105, rw)
+├── documents/           Paperless-ngx (CT 106, rw)
+└── backup/
     ├── vzdump/          Proxmox vzdump (Host)
     ├── docker-configs/  Config-Backup-Script (Host)
     └── homeassistant/   HA Samba Backup (Pi)
 ```
+
+**TRaSH-konforme Struktur:** Radarr, Sonarr und SABnzbd bekommen alle `/mnt/storage` als `/data` gemountet — ein einziges Dateisystem, Hardlinks und Atomic Moves funktionieren.
 
 ### LXC Bind-Mounts
 
 | CT | Mount auf Host | Mount in LXC | Modus | Host-UID |
 |----|----------------|--------------|-------|----------|
 | 102 (servarr) | `/mnt/storage` | `/mnt/media` | rw | 101000 |
-| 103 (media) | `/mnt/storage` | `/mnt/media` | ro | — |
-| 104 (services) | `/mnt/storage` | `/mnt/media` | ro | — |
-| 105 (photos) | `/mnt/storage/Photos` | `/mnt/photos` | rw | 100000 |
-| 106 (documents) | `/mnt/storage/Documents` | `/mnt/documents` | rw | 101000 |
+| 103 (media) | `/mnt/storage` | `/data` | ro | — |
+| 105 (photos) | `/mnt/storage/photos` | `/mnt/photos` | rw | 100000 |
+| 106 (documents) | `/mnt/storage/documents` | `/mnt/documents` | rw | 101000 |
 
-Immich läuft als root im Container (UID 0 → Host 100000), alle anderen als User 1000 (→ Host 101000). Bei neuen Bind-Mounts immer `chown` auf die korrekte Host-UID.
+CT 104 hat keinen Storage-Mount — kein Service dort braucht Medienzugriff.
 
 ---
 
@@ -101,7 +105,7 @@ Wöchentliches tar der `/opt`-Verzeichnisse aller LXCs. Script: `/root/backup-co
 
 ```bash
 #!/bin/bash
-BACKUP_DIR="/mnt/storage/Backups/docker-configs"
+BACKUP_DIR="/mnt/storage/backup/docker-configs"
 DATE=$(date +%Y%m%d)
 mkdir -p "$BACKUP_DIR"
 
@@ -145,12 +149,12 @@ Geplant: Hetzner Storage Box + Borgbackup für Immich-Fotos und Paperless-Dokume
 | Dev | Modell | Gehäuse | Mount | Pool | SMART-Monitoring |
 |-----|--------|---------|-------|------|-----------------|
 | sda | Samsung SSD 840 EVO 500GB | intern | — | Boot | Scrutiny ✅ |
-| sdb | WD WD50NPJZ (Intenso-Gehäuse) | USB | /mnt/disk2 | MergerFS | Scrutiny ✅ |
-| sdc | Seagate ST5000LM000-2AN170 (Portable) | USB | /mnt/disk1 | MergerFS | Manuell ⚠️ |
-| sdd | Seagate ST5000LM000-2U8170 (Expansion SW) | USB | /mnt/disk3 | MergerFS | Manuell ⚠️ |
-| (sde) | Seagate ST5000LM000-2AN170 (WD MyPassport) | USB | — | SnapRAID Parity (geplant) | Manuell ⚠️ |
+| sdb | Seagate ST5000LM000-2U8170 (Expansion SW) | USB 2 | /mnt/disk1 | MergerFS | Manuell ⚠️ |
+| sdc | Seagate ST5000LM000-2AN170 (Portable) | USB 3 | /mnt/disk2 | MergerFS | Manuell ⚠️ |
+| sdd | WD MyPassport ST5000LM000-2AN170 | USB 3 | /mnt/disk3 | MergerFS | Manuell ⚠️ |
+| sde | WD WD50NPJZ (Intenso-Gehäuse) | USB 2 | /mnt/parity | SnapRAID Parity (geplant) | Scrutiny ✅ |
 
-5. Disk wird morgen angeschlossen. Nach SATA-Migration (ASM1166) werden alle fünf Drives von Scrutiny vollständig überwacht.
+Nach SATA-Migration (ASM1166): alle fünf Drives von Scrutiny vollständig überwacht.
 
 ---
 
@@ -160,15 +164,13 @@ Geplant: Hetzner Storage Box + Borgbackup für Immich-Fotos und Paperless-Dokume
 
 Läuft direkt auf dem Proxmox-Host (nicht in einem LXC) — notwendig für direkten Block-Device-Zugriff. Compose unter `/opt/scrutiny/`.
 
-**Einschränkung aktuell:** Die Seagate-Gehäuse (0bc2:2344 Portable, 0bc2:203a Expansion SW) sperren SMART-Passthrough via USB vollständig. sdc und sdd sind in der collector.yaml ausgeschlossen und werden manuell überwacht.
+**Einschränkung:** Alle USB-Gehäuse (sdb, sdc, sdd, sde) blockieren SMART-Passthrough vollständig — USB-Bridge-Chips verweigern den Zugriff auf Linux. Nur sda (Boot-SSD, intern) wird von Scrutiny überwacht. Alle anderen Drives nur via CrystalDiskInfo auf Windows.
 
 ```yaml
 # /opt/scrutiny/config/collector.yaml
 version: 1
 devices:
   - device: /dev/sda
-    type: sat
-  - device: /dev/sdb
     type: sat
 ```
 

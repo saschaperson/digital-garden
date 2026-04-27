@@ -150,6 +150,53 @@ done
 
 ---
 
+## Digital Garden publizieren
+
+> **Erinnerung:** Nicht nur dokumentieren — auch publizieren. Nach jeder größeren Änderung an den Homelab-Zetteln diese Commands ausführen.
+
+```bash
+cd ~/Documents/Obsidian/Personal
+git add .
+git commit -m "Update $(date +%Y-%m-%d)"
+git push
+```
+
+Beim ersten Push nach einem `filter-repo` oder neu geklontem Repo:
+
+```bash
+git push --set-upstream origin main
+```
+
+---
+
+## Festplatten sicher aushängen
+
+Vor SMART-Checks oder Hardware-Änderungen am Pool — immer in dieser Reihenfolge:
+
+```bash
+# 1. Abhängige LXCs stoppen
+pct stop 102 105 106
+
+# 2. MergerFS und Disks aushängen
+umount /mnt/storage
+umount /mnt/disk1
+umount /mnt/disk2
+umount /mnt/disk3
+
+# 3. Prüfen ob alles sauber ausgehängt ist
+mount | grep -E "disk|storage"
+# Keine Ausgabe = sauber
+```
+
+Nach dem Wiederanschließen:
+
+```bash
+systemctl start mnt-storage.mount
+pct start 102 105 106
+```
+
+---
+
 ## Notfall-Reihenfolge
 
 Nach ungeplanten Reboots oder wenn nicht alle Services laufen — immer in dieser Reihenfolge:
@@ -180,4 +227,3 @@ pct exec 103 -- bash -c "cd /opt/media && docker compose up -d"
 
 **Typische Ursache wenn CT 102/105/106 nicht starten:** MergerFS nicht gemountet — immer Schritt 1 zuerst.
 
-**Disks manuell aushängen** (z.B. für SMART-Check): Vorher `pct stop 102 105 106`. Nach Remount wieder starten. Nie unmounten während die LXCs laufen.
